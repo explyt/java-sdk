@@ -259,7 +259,7 @@ class LifecycleInitializer {
 			}
 			// Providing an empty operation since we are only interested in triggering
 			// the implicit initialization step.
-			withIntitialization("re-initializing", result -> Mono.empty()).subscribe();
+			throw new RuntimeException("Initialization failed", t);
 		}
 	}
 
