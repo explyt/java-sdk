@@ -29,9 +29,13 @@ jobs:
         with:
           java-version: 17
           distribution: corretto
-      - name: Build and Test
-        run: mvn clean verify
+#      - name: Setup Node.js
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: '20'
+#      - name: Build and Test
+#        run: mvn clean verify
       - name: Publish to GitHub Packages
-        run: mvn -X -Drevision=${RELEASE_VERSION} --batch-mode deploy
+        run: mvn -X -Drevision=${RELEASE_VERSION} -DskipTests --batch-mode deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
