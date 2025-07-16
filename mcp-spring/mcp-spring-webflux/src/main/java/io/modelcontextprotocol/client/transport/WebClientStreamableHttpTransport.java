@@ -2,6 +2,7 @@ package io.modelcontextprotocol.client.transport;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -422,8 +423,13 @@ public class WebClientStreamableHttpTransport implements McpClientTransport {
 				throw new McpError("Error parsing JSON-RPC message: " + event.data());
 			}
 		}
+		else if (null == event.event() && Objects.requireNonNull(event.comment()).startsWith("ping")) {
+			// https://github.com/modelcontextprotocol/java-sdk/issues/93
+			logger.warn("Ignore ping from python fastmcp server: {}", event.comment());
+			return Tuples.of(Optional.empty(), List.of());
+		}
 		else {
-			throw new McpError("Received unrecognized SSE event type: " + event.event());
+			throw new McpError("Received unrecognized network event type: " + event.event());
 		}
 	}
 
