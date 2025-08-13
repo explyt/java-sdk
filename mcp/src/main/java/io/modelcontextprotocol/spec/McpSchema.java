@@ -481,6 +481,7 @@ public final class McpSchema {
 		 * Present if the server supports argument autocompletion suggestions.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record CompletionCapabilities() {
 		}
 
@@ -488,6 +489,7 @@ public final class McpSchema {
 		 * Present if the server supports sending log messages to the client.
 		 */
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record LoggingCapabilities() {
 		}
 
@@ -498,6 +500,7 @@ public final class McpSchema {
 		 * the prompt list
 		 */
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record PromptCapabilities(@JsonProperty("listChanged") Boolean listChanged) {
 		}
 
@@ -509,6 +512,7 @@ public final class McpSchema {
 		 * the resource list
 		 */
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record ResourceCapabilities(@JsonProperty("subscribe") Boolean subscribe,
 				@JsonProperty("listChanged") Boolean listChanged) {
 		}
@@ -520,6 +524,7 @@ public final class McpSchema {
 		 * the tool list
 		 */
 		@JsonInclude(JsonInclude.Include.NON_ABSENT)
+		@JsonIgnoreProperties(ignoreUnknown = true)
 		public record ToolCapabilities(@JsonProperty("listChanged") Boolean listChanged) {
 		}
 
