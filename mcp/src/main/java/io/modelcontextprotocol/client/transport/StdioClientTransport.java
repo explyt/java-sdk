@@ -130,7 +130,7 @@ public class StdioClientTransport implements McpClientTransport {
 				this.process = processBuilder.start();
 			}
 			catch (IOException e) {
-				throw new RuntimeException("Failed to start process with command: " + fullCommand, e);
+				throw new RuntimeException("Failed to start process with command: " + params.getCommand(), e);
 			}
 
 			// Validate process streams
