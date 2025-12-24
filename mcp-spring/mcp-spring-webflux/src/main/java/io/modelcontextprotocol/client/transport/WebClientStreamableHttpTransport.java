@@ -180,7 +180,11 @@ public class WebClientStreamableHttpTransport implements McpClientTransport {
 	@Override
 	public void setExceptionHandler(Consumer<Throwable> handler) {
 		logger.debug("Exception handler registered");
-		this.exceptionHandler.set(handler);
+		if (this.exceptionHandler.get() == null) {
+			this.exceptionHandler.set(handler);
+			return;
+		}
+		this.exceptionHandler.getAndUpdate(thisHandler -> thisHandler.andThen(handler));
 	}
 
 	private void handleException(Throwable t) {
