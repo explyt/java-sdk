@@ -67,7 +67,7 @@ public class StdioClientTransport implements McpClientTransport {
 	private volatile boolean isClosing = false;
 
 	// visible for tests
-	private Consumer<String> stdErrorHandler = error -> logger.info("STDERR Message received: {}", error);
+	private Consumer<Throwable> stdErrorHandler = error -> logger.info("STDERR Message received: {}", error);
 
 	/**
 	 * Creates a new StdioClientTransport with the specified parameters and JsonMapper.
@@ -154,10 +154,16 @@ public class StdioClientTransport implements McpClientTransport {
 	 * The provided handler will be called when errors occur during transport operations,
 	 * such as connection failures or protocol violations.
 	 * </p>
-	 * @param errorHandler a consumer that processes error messages
+	 * @param handler a consumer that processes error messages
 	 */
-	public void setStdErrorHandler(Consumer<String> errorHandler) {
-		this.stdErrorHandler = errorHandler;
+	@Override
+	public void setExceptionHandler(Consumer<Throwable> handler) {
+		logger.debug("Exception handler registered");
+		if (this.stdErrorHandler == null) {
+			this.stdErrorHandler = handler;
+			return;
+		}
+		this.stdErrorHandler = this.stdErrorHandler.andThen(handler);
 	}
 
 	/**
@@ -221,7 +227,7 @@ public class StdioClientTransport implements McpClientTransport {
 
 	private void handleIncomingErrors() {
 		this.errorSink.asFlux().subscribe(e -> {
-			this.stdErrorHandler.accept(e);
+			this.stdErrorHandler.accept(new Throwable(e));
 		});
 	}
 

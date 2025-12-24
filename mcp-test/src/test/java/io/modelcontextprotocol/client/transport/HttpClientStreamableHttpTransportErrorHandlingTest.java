@@ -14,6 +14,7 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import io.modelcontextprotocol.spec.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,12 +23,6 @@ import org.junit.jupiter.api.Timeout;
 import com.sun.net.httpserver.HttpServer;
 
 import io.modelcontextprotocol.server.transport.TomcatTestUtil;
-import io.modelcontextprotocol.spec.HttpHeaders;
-import io.modelcontextprotocol.spec.McpClientTransport;
-import io.modelcontextprotocol.spec.McpSchema;
-import io.modelcontextprotocol.spec.McpTransportException;
-import io.modelcontextprotocol.spec.McpTransportSessionNotFoundException;
-import io.modelcontextprotocol.spec.ProtocolVersions;
 import reactor.test.StepVerifier;
 
 /**
@@ -117,8 +112,9 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 		var testMessage = createTestRequestMessage();
 
 		StepVerifier.create(transport.sendMessage(testMessage))
-			.expectErrorMatches(throwable -> throwable instanceof McpTransportException
-					&& throwable.getMessage().contains("Not Found") && throwable.getMessage().contains("404")
+			.expectErrorMatches(throwable -> throwable instanceof JRPCMcpTransportException
+					&& throwable.getMessage().contains("Not Found")
+					&& ((JRPCMcpTransportException) throwable).statusCode == 404
 					&& !(throwable instanceof McpTransportSessionNotFoundException))
 			.verify();
 
@@ -173,8 +169,9 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 		var testMessage = createTestRequestMessage();
 
 		StepVerifier.create(transport.sendMessage(testMessage))
-			.expectErrorMatches(throwable -> throwable instanceof McpTransportException
-					&& throwable.getMessage().contains("Bad Request") && throwable.getMessage().contains("400")
+			.expectErrorMatches(throwable -> throwable instanceof JRPCMcpTransportException
+					&& throwable.getMessage().contains("Bad Request")
+					&& ((JRPCMcpTransportException) throwable).statusCode == 400
 					&& !(throwable instanceof McpTransportSessionNotFoundException))
 			.verify();
 

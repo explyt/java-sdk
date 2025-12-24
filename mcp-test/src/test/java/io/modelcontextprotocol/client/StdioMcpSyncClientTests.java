@@ -51,8 +51,8 @@ class StdioMcpSyncClientTests extends AbstractMcpSyncClientTests {
 		McpClientTransport transport = createMcpTransport();
 		StepVerifier.create(transport.connect(msg -> msg)).verifyComplete();
 
-		((StdioClientTransport) transport).setStdErrorHandler(error -> {
-			receivedError.set(error);
+		transport.setExceptionHandler(error -> {
+			receivedError.set(error.getMessage());
 			latch.countDown();
 		});
 
