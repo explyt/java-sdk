@@ -18,6 +18,7 @@ import java.util.function.Function;
 import io.modelcontextprotocol.json.TypeRef;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.spec.McpClientTransport;
+import io.modelcontextprotocol.spec.McpTransportProcessException;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.JSONRPCMessage;
 import io.modelcontextprotocol.util.Assert;
@@ -121,7 +122,8 @@ public class StdioClientTransport implements McpClientTransport {
 				this.process = processBuilder.start();
 			}
 			catch (IOException e) {
-				throw new RuntimeException("Failed to start process with command: " + params.getCommand(), e);
+				throw new McpTransportProcessException("Failed to start process with command: " + params.getCommand(),
+						e, params.getCommand());
 			}
 
 			// Validate process streams
@@ -135,6 +137,12 @@ public class StdioClientTransport implements McpClientTransport {
 			startOutboundProcessing();
 			startErrorProcessing();
 			logger.info("MCP server started");
+		}).doOnError(error -> {
+			// Forward startup failures (e.g. process not found) to the exception handler
+			// registered via setExceptionHandler(), so that LifecycleInitializer can
+			// fail initialization immediately instead of waiting for a timeout.
+			logger.error("MCP server startup failed for command: {}", params.getCommand(), error);
+			this.stdErrorHandler.accept(error);
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
 

@@ -14,6 +14,8 @@ import java.util.function.Function;
 import io.modelcontextprotocol.spec.McpClientSession;
 import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.modelcontextprotocol.spec.McpTransportException;
+import io.modelcontextprotocol.spec.McpTransportProcessException;
 import io.modelcontextprotocol.spec.McpTransportSessionNotFoundException;
 import io.modelcontextprotocol.util.Assert;
 import org.slf4j.Logger;
@@ -218,7 +220,9 @@ class LifecycleInitializer {
 		}
 
 		private void error(Throwable t) {
-			this.initSink.emitError(t, Sinks.EmitFailureHandler.FAIL_FAST);
+			// tryEmitError instead of FAIL_FAST: the sink may already be
+			// completed (successful init) or errored (duplicate transport error).
+			this.initSink.tryEmitError(t);
 		}
 
 		private void close() {
@@ -244,13 +248,36 @@ class LifecycleInitializer {
 	/**
 	 * Hook to handle exceptions that occur during the MCP transport session.
 	 * <p>
-	 * If the exception is a {@link McpTransportSessionNotFoundException}, it indicates
-	 * that the session was not found, and we should re-initialize the client.
+	 * Any transport-level exception (e.g. process startup failure, connection refused) is
+	 * propagated into the active initialization sink so that callers of
+	 * {@link #withInitialization} fail immediately instead of waiting for a timeout.
+	 * </p>
+	 * <p>
+	 * If the exception is a {@link McpTransportSessionNotFoundException}, it additionally
+	 * invalidates the current session and triggers re-initialization.
 	 * </p>
 	 * @param t The exception to handle
 	 */
 	public void handleException(Throwable t) {
 		logger.warn("Handling exception", t);
+
+		// Fail the pending initialization immediately so callers don't have to wait
+		// for the initialization timeout to expire.
+		// Guard rules:
+		// - bare Throwable (not Exception): stderr lines from StdioClientTransport —
+		// informational, skip.
+		// - McpTransportException (excluding McpTransportProcessException): SSE reconnect
+		// /
+		// HTTP-level recoverable errors — skip.
+		// - McpTransportProcessException: fatal process startup failure — abort init.
+		// - Everything else (RuntimeException, etc.): fatal — abort init.
+		DefaultInitialization current = this.initializationRef.get();
+		boolean isFatalForInit = t instanceof Exception
+				&& (!(t instanceof McpTransportException) || t instanceof McpTransportProcessException);
+		if (current != null && current.initializeResult() == null && isFatalForInit) {
+			current.error(t);
+		}
+
 		if (t instanceof McpTransportSessionNotFoundException) {
 			DefaultInitialization previous = this.initializationRef.getAndSet(null);
 			if (previous != null) {
@@ -278,8 +305,19 @@ class LifecycleInitializer {
 			boolean needsToInitialize = previous == null;
 			logger.debug(needsToInitialize ? "Initialization process started" : "Joining previous initialization");
 
-			Mono<McpSchema.InitializeResult> initializationJob = needsToInitialize
-					? this.doInitialize(newInit, this.postInitializationHook, ctx) : previous.await();
+			// Start initialization as a side-effect subscription and always await
+			// the init sink. This decouples the caller's Mono from the doInitialize
+			// pipeline, so that errors pushed into the sink by handleException()
+			// (e.g. transport startup failures) are delivered to the caller
+			// immediately rather than being swallowed until the timeout fires.
+			if (needsToInitialize) {
+				this.doInitialize(newInit, this.postInitializationHook, ctx)
+					.contextWrite(ctx)
+					.subscribe(initialized -> {
+					}, ex -> logger.debug("Initialization pipeline failed", ex));
+			}
+
+			Mono<McpSchema.InitializeResult> initializationJob = needsToInitialize ? newInit.await() : previous.await();
 
 			return initializationJob.map(initializeResult -> this.initializationRef.get())
 				.timeout(this.initializationTimeout)

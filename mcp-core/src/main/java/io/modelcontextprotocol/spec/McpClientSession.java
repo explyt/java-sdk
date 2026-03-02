@@ -119,7 +119,10 @@ public class McpClientSession implements McpSession {
 		this.requestHandlers.putAll(requestHandlers);
 		this.notificationHandlers.putAll(notificationHandlers);
 
-		this.transport.connect(mono -> mono.doOnNext(this::handle)).transform(connectHook).subscribe();
+		// Subscribe with an error consumer to prevent Reactor's
+		// ErrorCallbackNotImplemented from silently dropping transport failures.
+		this.transport.connect(mono -> mono.doOnNext(this::handle)).transform(connectHook).subscribe(unused -> {
+		}, error -> logger.error("Failed to connect MCP client transport", error));
 	}
 
 	private void dismissPendingResponses() {
