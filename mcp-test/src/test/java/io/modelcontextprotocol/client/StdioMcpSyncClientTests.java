@@ -44,24 +44,29 @@ class StdioMcpSyncClientTests extends AbstractMcpSyncClientTests {
 	}
 
 	@Test
-	void customErrorHandlerShouldReceiveErrors() throws InterruptedException {
-		CountDownLatch latch = new CountDownLatch(1);
-		AtomicReference<String> receivedError = new AtomicReference<>();
-
+	void stderrLinesShouldBeDeliveredViaErrorSinkNotExceptionHandler() throws InterruptedException {
 		McpClientTransport transport = createMcpTransport();
 		StepVerifier.create(transport.connect(msg -> msg)).verifyComplete();
 
-		transport.setExceptionHandler(error -> {
-			receivedError.set(error.getMessage());
+		// Stderr lines must NOT reach the exception handler.
+		AtomicReference<Throwable> handlerError = new AtomicReference<>();
+		transport.setExceptionHandler(handlerError::set);
+
+		// Stderr lines ARE delivered via the error sink.
+		CountDownLatch latch = new CountDownLatch(1);
+		AtomicReference<String> receivedLine = new AtomicReference<>();
+		StdioClientTransport stdioTransport = (StdioClientTransport) transport;
+		stdioTransport.getErrorSink().asFlux().subscribe(line -> {
+			receivedLine.set(line);
 			latch.countDown();
 		});
 
-		String errorMessage = "Test error";
-		((StdioClientTransport) transport).getErrorSink().emitNext(errorMessage, Sinks.EmitFailureHandler.FAIL_FAST);
+		String stderrLine = "INFO: server starting";
+		stdioTransport.getErrorSink().emitNext(stderrLine, Sinks.EmitFailureHandler.FAIL_FAST);
 
 		assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-
-		assertThat(receivedError.get()).isNotNull().isEqualTo(errorMessage);
+		assertThat(receivedLine.get()).isEqualTo(stderrLine);
+		assertThat(handlerError.get()).as("stderr lines must NOT propagate to the exception handler").isNull();
 
 		StepVerifier.create(transport.closeGracefully()).expectComplete().verify(Duration.ofSeconds(5));
 	}

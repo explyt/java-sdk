@@ -106,7 +106,6 @@ public class StdioClientTransport implements McpClientTransport {
 		return Mono.<Void>fromRunnable(() -> {
 			logger.info("MCP server starting.");
 			handleIncomingMessages(handler);
-			handleIncomingErrors();
 
 			// Prepare command and environment
 			List<String> fullCommand = new ArrayList<>();
@@ -231,12 +230,6 @@ public class StdioClientTransport implements McpClientTransport {
 				.transform(inboundMessageHandler)
 				.contextWrite(ctx -> ctx.put("observation", "myObservation")))
 			.subscribe();
-	}
-
-	private void handleIncomingErrors() {
-		this.errorSink.asFlux().subscribe(e -> {
-			this.stdErrorHandler.accept(new Throwable(e));
-		});
 	}
 
 	@Override
