@@ -8,8 +8,15 @@ import java.util.List;
 /**
  * Exception thrown when a stdio server process fails to start.
  * <p>
- * Carries the command and arguments so that callers can present actionable diagnostics
- * (e.g. "executable not found") instead of a generic error message.
+ * Previously, process startup failures were thrown as a generic {@link RuntimeException},
+ * making it impossible for callers (e.g. {@code LifecycleInitializer}) to distinguish a
+ * fatal "executable not found" from a recoverable transport error. A typed exception lets
+ * callers apply the right recovery strategy and present actionable diagnostics instead of
+ * an opaque message.
+ * <p>
+ * Extends {@link McpTransportException} so the existing {@code isFatalForInit} guard in
+ * {@code LifecycleInitializer.handleException} can special-case it via
+ * {@code instanceof McpTransportProcessException}.
  *
  * @author Veai Agent
  */

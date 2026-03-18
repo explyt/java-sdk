@@ -68,6 +68,9 @@ public class StdioClientTransport implements McpClientTransport {
 	private volatile boolean isClosing = false;
 
 	// visible for tests
+	// Changed from Consumer<String> to Consumer<Throwable> so that the McpClientTransport
+	// interface's setExceptionHandler(Consumer<Throwable>) contract can be implemented,
+	// allowing LifecycleInitializer to receive typed transport exceptions.
 	private Consumer<Throwable> stdErrorHandler = error -> logger.info("STDERR Message received: {}", error);
 
 	/**
@@ -121,6 +124,11 @@ public class StdioClientTransport implements McpClientTransport {
 				this.process = processBuilder.start();
 			}
 			catch (IOException e) {
+				// Throw McpTransportProcessException (not generic RuntimeException) so
+				// that
+				// LifecycleInitializer.handleException can identify this as a fatal
+				// startup
+				// failure and fail the initialization sink immediately.
 				throw new McpTransportProcessException("Failed to start process with command: " + params.getCommand(),
 						e, params.getCommand());
 			}
@@ -137,9 +145,11 @@ public class StdioClientTransport implements McpClientTransport {
 			startErrorProcessing();
 			logger.info("MCP server started");
 		}).doOnError(error -> {
-			// Forward startup failures (e.g. process not found) to the exception handler
-			// registered via setExceptionHandler(), so that LifecycleInitializer can
-			// fail initialization immediately instead of waiting for a timeout.
+			// Without this, a McpTransportProcessException thrown inside fromRunnable()
+			// would only surface to the subscriber of connect() but never reach
+			// LifecycleInitializer, which registers its hook via setExceptionHandler().
+			// Forwarding here ensures LifecycleInitializer.handleException() is called
+			// and can abort pending initialization immediately.
 			logger.error("MCP server startup failed for command: {}", params.getCommand(), error);
 			this.stdErrorHandler.accept(error);
 		}).subscribeOn(Schedulers.boundedElastic());
@@ -158,10 +168,16 @@ public class StdioClientTransport implements McpClientTransport {
 	 * Sets the handler for processing transport-level errors.
 	 *
 	 * <p>
-	 * The provided handler will be called when errors occur during transport operations,
-	 * such as connection failures or protocol violations.
+	 * Replaces the old {@code setStdErrorHandler(Consumer<String>)} which was not part of
+	 * the {@link McpClientTransport} interface. Implementing the interface method allows
+	 * {@code McpAsyncClient} / {@code LifecycleInitializer} to register a single unified
+	 * error hook without knowing the concrete transport type.
 	 * </p>
-	 * @param handler a consumer that processes error messages
+	 * <p>
+	 * Uses {@code andThen} chaining rather than replacement so the default logging
+	 * handler is preserved alongside any caller-registered handler.
+	 * </p>
+	 * @param handler a consumer that processes transport-level exceptions
 	 */
 	@Override
 	public void setExceptionHandler(Consumer<Throwable> handler) {

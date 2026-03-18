@@ -119,8 +119,11 @@ public class McpClientSession implements McpSession {
 		this.requestHandlers.putAll(requestHandlers);
 		this.notificationHandlers.putAll(notificationHandlers);
 
-		// Subscribe with an error consumer to prevent Reactor's
-		// ErrorCallbackNotImplemented from silently dropping transport failures.
+		// Without an error consumer, Reactor wraps any connect() failure in
+		// ErrorCallbackNotImplemented and rethrows it on the thread pool, causing an
+		// unhandled exception that crashes the worker instead of surfacing to the caller.
+		// The error consumer here logs the failure; the real error-handling path is via
+		// McpClientTransport.setExceptionHandler(), which LifecycleInitializer registers.
 		this.transport.connect(mono -> mono.doOnNext(this::handle)).transform(connectHook).subscribe(unused -> {
 		}, error -> logger.error("Failed to connect MCP client transport", error));
 	}
