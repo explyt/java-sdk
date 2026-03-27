@@ -409,7 +409,6 @@ public class HttpClientSseClientTransport implements McpClientTransport {
 	 * message. The message is serialized to JSON and sent as an HTTP POST request.
 	 * @param message the JSON-RPC message to send
 	 * @return a Mono that completes when the message is sent
-	 * @throws McpError if the message endpoint is not available or the wait times out
 	 */
 	@Override
 	public Mono<Void> sendMessage(JSONRPCMessage message) {
@@ -433,7 +432,7 @@ public class HttpClientSseClientTransport implements McpClientTransport {
 				}))
 				.doOnError(error -> {
 					if (!isClosing) {
-						logger.error("Error sending message: {}", error.getMessage());
+						logger.warn("Error sending message to MCP server", error);
 					}
 				});
 		}).then();

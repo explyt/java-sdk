@@ -149,8 +149,10 @@ public class StdioClientTransport implements McpClientTransport {
 			// would only surface to the subscriber of connect() but never reach
 			// LifecycleInitializer, which registers its hook via setExceptionHandler().
 			// Forwarding here ensures LifecycleInitializer.handleException() is called
-			// and can abort pending initialization immediately.
-			logger.error("MCP server startup failed for command: {}", params.getCommand(), error);
+			// and can abort pending initialization immediately. Log at WARN because
+			// startup failures are propagated to the caller via the registered
+			// exception handler and should not be reported as internal SDK errors.
+			logger.warn("MCP server startup failed for command: {}", params.getCommand(), error);
 			this.stdErrorHandler.accept(error);
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
