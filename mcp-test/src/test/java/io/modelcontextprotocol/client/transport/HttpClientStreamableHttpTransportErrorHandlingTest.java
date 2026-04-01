@@ -58,6 +58,11 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 			if ("DELETE".equals(httpExchange.getRequestMethod())) {
 				httpExchange.sendResponseHeaders(200, 0);
 			}
+			else if ("GET".equals(httpExchange.getRequestMethod())) {
+				// GitHub MCP pattern: GET (SSE reconnect) is not supported, return 405
+				int status = serverResponseStatus.get();
+				httpExchange.sendResponseHeaders(status == 200 ? 405 : status, 0);
+			}
 			else if ("POST".equals(httpExchange.getRequestMethod())) {
 				// Capture session ID from request if present
 				String requestSessionId = httpExchange.getRequestHeaders().getFirst(HttpHeaders.MCP_SESSION_ID);
@@ -329,6 +334,76 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 		// The error should be handled internally and passed to exception handler
 
 		StepVerifier.create(transport.closeGracefully()).verifyComplete();
+	}
+
+	/**
+	 * Reproduces GitHub MCP issue: POST returns SSE stream (Streamable HTTP), stream
+	 * ends, DefaultMcpTransportStream calls reconnect() via GET, server returns 405.
+	 * <p>
+	 * Per MCP Streamable HTTP spec, a server MUST either return Content-Type:
+	 * text/event-stream or HTTP 405 Method Not Allowed for a GET request, indicating that
+	 * the server does not offer an SSE stream at this endpoint. The client should treat
+	 * 405 as a "server-initiated SSE not supported" signal and continue with normal POST
+	 * request/response behavior — not as an SSE parse failure. <a href=
+	 * "https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#listening-for-messages-from-the-server">docs</a>
+	 */
+	@Test
+	void test405OnGetReconnectAfterSsePostResponse() throws IOException, InterruptedException {
+		int port = TomcatTestUtil.findAvailablePort();
+		HttpServer sseServer = HttpServer.create(new InetSocketAddress(port), 0);
+
+		sseServer.createContext("/mcp", exchange -> {
+			if ("POST".equals(exchange.getRequestMethod())) {
+				// Respond with a single SSE event, then close — stream ends,
+				// DefaultMcpTransportStream will call reconnect() (GET)
+				exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+				exchange.getResponseHeaders().set(HttpHeaders.MCP_SESSION_ID, "sse-session-1");
+				exchange.sendResponseHeaders(200, 0);
+				String sseEvent = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"result\":{},\"id\":\"test-id\"}\n\n";
+				exchange.getResponseBody().write(sseEvent.getBytes());
+				exchange.getResponseBody().flush();
+				exchange.close();
+			}
+			else if ("GET".equals(exchange.getRequestMethod())) {
+				// GitHub MCP pattern: GET not supported
+				exchange.sendResponseHeaders(405, 0);
+				exchange.getResponseBody().write("Method Not Allowed".getBytes());
+				exchange.close();
+			}
+			else if ("DELETE".equals(exchange.getRequestMethod())) {
+				exchange.sendResponseHeaders(200, 0);
+				exchange.close();
+			}
+		});
+		sseServer.setExecutor(null);
+		sseServer.start();
+
+		try {
+			var sseTransport = HttpClientStreamableHttpTransport.builder("http://localhost:" + port).build();
+
+			// Capture any exception routed through handleException()
+			AtomicReference<Throwable> caughtException = new AtomicReference<>();
+			sseTransport.setExceptionHandler(caughtException::set);
+
+			StepVerifier.create(sseTransport.connect(msg -> msg)).verifyComplete();
+
+			// POST -> SSE stream -> stream ends -> reconnect() GET -> 405
+			StepVerifier.create(sseTransport.sendMessage(createTestRequestMessage())).verifyComplete();
+
+			// Give reconnect() time to complete asynchronously
+			Thread.sleep(500);
+
+			// Without the fix: exceptionHandler receives McpTransportException
+			// "Invalid SSE response. Status code: 405 Line: Method Not Allowed"
+			// With the fix: 405 is handled as METHOD_NOT_ALLOWED -> Flux.empty(), no
+			// exception
+			assertThat(caughtException.get()).isNull();
+
+			StepVerifier.create(sseTransport.closeGracefully()).verifyComplete();
+		}
+		finally {
+			sseServer.stop(0);
+		}
 	}
 
 	private McpSchema.JSONRPCRequest createTestRequestMessage() {

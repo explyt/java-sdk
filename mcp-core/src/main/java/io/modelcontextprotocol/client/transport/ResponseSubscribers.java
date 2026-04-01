@@ -180,10 +180,29 @@ class ResponseSubscribers {
 					upstream().request(1);
 				}
 				else {
-					// If the response is not successful, emit an error
-					this.sink.error(new McpTransportException(
-							"Invalid SSE response. Status code: " + this.responseInfo.statusCode() + " Line: " + line));
-
+					if (this.responseInfo.statusCode() >= 400) {
+						// Per MCP Streamable HTTP spec, a GET used to open a
+						// server-initiated
+						// SSE stream may validly return 405 Method Not Allowed, meaning
+						// no SSE
+						// stream is offered at that endpoint; clients should treat this
+						// as
+						// fallback, not an SSE parse failure.
+						// https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#listening-for-messages-from-the-server
+						//
+						// Because the protocol meaning is already determined by the HTTP
+						// status,
+						// skip non-SSE body lines so hookOnComplete fires and the status
+						// code
+						// propagates to the upstream flatMap handler.
+						logger.debug("Ignoring non-SSE body line for error response (status {}): {}",
+								this.responseInfo.statusCode(), line);
+						upstream().request(1);
+					}
+					else {
+						this.sink.error(new McpTransportException("Invalid SSE response. Status code: "
+								+ this.responseInfo.statusCode() + " Line: " + line));
+					}
 				}
 			}
 		}
