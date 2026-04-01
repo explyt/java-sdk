@@ -337,25 +337,40 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 	}
 
 	/**
-	 * Reproduces GitHub MCP issue: POST returns SSE stream (Streamable HTTP), stream
-	 * ends, DefaultMcpTransportStream calls reconnect() via GET, server returns 405.
-	 * <p>
-	 * Per MCP Streamable HTTP spec, a server MUST either return Content-Type:
-	 * text/event-stream or HTTP 405 Method Not Allowed for a GET request, indicating that
-	 * the server does not offer an SSE stream at this endpoint. The client should treat
-	 * 405 as a "server-initiated SSE not supported" signal and continue with normal POST
-	 * request/response behavior — not as an SSE parse failure. <a href=
+	 * Reproduces GitHub MCP issue: POST returns SSE stream, stream ends,
+	 * DefaultMcpTransportStream calls reconnect() via GET, server returns 405. Per MCP
+	 * spec, 405 is the defined "SSE not supported" signal — must be silent. <a href=
 	 * "https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#listening-for-messages-from-the-server">docs</a>
 	 */
 	@Test
 	void test405OnGetReconnectAfterSsePostResponse() throws IOException, InterruptedException {
+		Throwable exception = runReconnectGetStatusTest(405);
+		assertThat(exception).isNull();
+	}
+
+	/**
+	 * Per MCP spec, only 405 is the defined graceful fallback for GET SSE probe. Other
+	 * 5xx responses are real errors and must be reported via exceptionHandler.
+	 */
+	@Test
+	void test5xxOnGetReconnectIsReportedAsError() throws IOException, InterruptedException {
+		Throwable exception = runReconnectGetStatusTest(503);
+		assertThat(exception).isNotNull().isInstanceOf(McpTransportException.class).hasMessageContaining("503");
+	}
+
+	/**
+	 * Starts a mock Streamable HTTP server where POST responds with a single SSE event
+	 * (triggering reconnect) and GET responds with the given status code. Returns any
+	 * exception caught by the transport's exceptionHandler after reconnect completes.
+	 */
+	private Throwable runReconnectGetStatusTest(int getStatus) throws IOException, InterruptedException {
 		int port = TomcatTestUtil.findAvailablePort();
 		HttpServer sseServer = HttpServer.create(new InetSocketAddress(port), 0);
 
 		sseServer.createContext("/mcp", exchange -> {
 			if ("POST".equals(exchange.getRequestMethod())) {
-				// Respond with a single SSE event, then close — stream ends,
-				// DefaultMcpTransportStream will call reconnect() (GET)
+				// Single SSE event then close — stream ends, reconnect() (GET) is
+				// triggered
 				exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
 				exchange.getResponseHeaders().set(HttpHeaders.MCP_SESSION_ID, "sse-session-1");
 				exchange.sendResponseHeaders(200, 0);
@@ -365,9 +380,9 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 				exchange.close();
 			}
 			else if ("GET".equals(exchange.getRequestMethod())) {
-				// GitHub MCP pattern: GET not supported
-				exchange.sendResponseHeaders(405, 0);
-				exchange.getResponseBody().write("Method Not Allowed".getBytes());
+				byte[] body = Integer.toString(getStatus).getBytes();
+				exchange.sendResponseHeaders(getStatus, body.length);
+				exchange.getResponseBody().write(body);
 				exchange.close();
 			}
 			else if ("DELETE".equals(exchange.getRequestMethod())) {
@@ -380,26 +395,15 @@ public class HttpClientStreamableHttpTransportErrorHandlingTest {
 
 		try {
 			var sseTransport = HttpClientStreamableHttpTransport.builder("http://localhost:" + port).build();
-
-			// Capture any exception routed through handleException()
 			AtomicReference<Throwable> caughtException = new AtomicReference<>();
 			sseTransport.setExceptionHandler(caughtException::set);
 
 			StepVerifier.create(sseTransport.connect(msg -> msg)).verifyComplete();
-
-			// POST -> SSE stream -> stream ends -> reconnect() GET -> 405
 			StepVerifier.create(sseTransport.sendMessage(createTestRequestMessage())).verifyComplete();
-
-			// Give reconnect() time to complete asynchronously
-			Thread.sleep(500);
-
-			// Without the fix: exceptionHandler receives McpTransportException
-			// "Invalid SSE response. Status code: 405 Line: Method Not Allowed"
-			// With the fix: 405 is handled as METHOD_NOT_ALLOWED -> Flux.empty(), no
-			// exception
-			assertThat(caughtException.get()).isNull();
+			Thread.sleep(500); // wait for async reconnect()
 
 			StepVerifier.create(sseTransport.closeGracefully()).verifyComplete();
+			return caughtException.get();
 		}
 		finally {
 			sseServer.stop(0);

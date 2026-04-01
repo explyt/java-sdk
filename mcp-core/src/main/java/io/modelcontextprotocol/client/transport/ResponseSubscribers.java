@@ -180,23 +180,17 @@ class ResponseSubscribers {
 					upstream().request(1);
 				}
 				else {
-					if (this.responseInfo.statusCode() >= 400) {
-						// Per MCP Streamable HTTP spec, a GET used to open a
-						// server-initiated
-						// SSE stream may validly return 405 Method Not Allowed, meaning
-						// no SSE
-						// stream is offered at that endpoint; clients should treat this
-						// as
-						// fallback, not an SSE parse failure.
+					if (this.responseInfo.statusCode() == 405) {
+						// Per MCP Streamable HTTP spec (2025-03-26), a GET used to open
+						// a server-initiated SSE stream MUST receive either
+						// Content-Type: text/event-stream or HTTP 405 Method Not Allowed
+						// — indicating the server does not offer an SSE stream here.
 						// https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#listening-for-messages-from-the-server
 						//
-						// Because the protocol meaning is already determined by the HTTP
-						// status,
-						// skip non-SSE body lines so hookOnComplete fires and the status
-						// code
-						// propagates to the upstream flatMap handler.
-						logger.debug("Ignoring non-SSE body line for error response (status {}): {}",
-								this.responseInfo.statusCode(), line);
+						// 405 is a defined capability signal, not a parse failure.
+						// Skip the plain-text body so hookOnComplete fires and the
+						// status code propagates to the upstream flatMap handler.
+						logger.debug("Ignoring non-SSE body line for 405 response: {}", line);
 						upstream().request(1);
 					}
 					else {
