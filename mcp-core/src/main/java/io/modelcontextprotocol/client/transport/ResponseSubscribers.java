@@ -180,22 +180,31 @@ class ResponseSubscribers {
 					upstream().request(1);
 				}
 				else {
-					if (this.responseInfo.statusCode() == 405) {
+					int statusCode = this.responseInfo.statusCode();
+					boolean successfulNonSse = statusCode >= 200 && statusCode < 300
+							&& !this.responseInfo.headers()
+								.firstValue("Content-Type")
+								.orElse("")
+								.toLowerCase()
+								.contains("text/event-stream");
+					if (statusCode == 405 || successfulNonSse) {
 						// Per MCP Streamable HTTP spec (2025-03-26), a GET used to open
 						// a server-initiated SSE stream MUST receive either
 						// Content-Type: text/event-stream or HTTP 405 Method Not Allowed
 						// — indicating the server does not offer an SSE stream here.
 						// https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#listening-for-messages-from-the-server
 						//
-						// 405 is a defined capability signal, not a parse failure.
-						// Skip the plain-text body so hookOnComplete fires and the
-						// status code propagates to the upstream flatMap handler.
-						logger.debug("Ignoring non-SSE body line for 405 response: {}", line);
+						// 405 is a defined capability signal, and a successful response
+						// without an SSE Content-Type (e.g. application/json from a
+						// cache/proxy) simply carries no stream — neither is a parse
+						// failure. Skip the body so hookOnComplete fires and the status
+						// code propagates to the upstream flatMap handler.
+						logger.debug("Ignoring non-SSE body line for status {}: {}", statusCode, line);
 						upstream().request(1);
 					}
 					else {
-						this.sink.error(new McpTransportException("Invalid SSE response. Status code: "
-								+ this.responseInfo.statusCode() + " Line: " + line));
+						this.sink.error(new McpTransportException(
+								"Invalid SSE response. Status code: " + statusCode + " Line: " + line));
 					}
 				}
 			}
