@@ -6,7 +6,6 @@ package io.modelcontextprotocol;
 
 import static io.modelcontextprotocol.util.ToolsUtils.EMPTY_JSON_SCHEMA;
 
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -28,7 +27,9 @@ import io.modelcontextprotocol.spec.McpSchema.InitializeResult;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import io.modelcontextprotocol.util.LocalHttpEndpoint;
 import net.javacrumbs.jsonunit.core.Option;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -43,6 +44,9 @@ import static org.awaitility.Awaitility.await;
 public abstract class AbstractStatelessIntegrationTests {
 
 	protected ConcurrentHashMap<String, McpClient.SyncSpec> clientBuilders = new ConcurrentHashMap<>();
+
+	@AutoClose
+	protected final LocalHttpEndpoint remoteService = LocalHttpEndpoint.serving("remote service response");
 
 	abstract protected void prepareClients(int port, String mcpEndpoint);
 
@@ -94,11 +98,8 @@ public abstract class AbstractStatelessIntegrationTests {
 
 				try {
 					HttpResponse<String> response = HttpClient.newHttpClient()
-						.send(HttpRequest.newBuilder()
-							.uri(URI.create(
-									"https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md"))
-							.GET()
-							.build(), HttpResponse.BodyHandlers.ofString());
+						.send(HttpRequest.newBuilder().uri(remoteService.uri()).GET().build(),
+								HttpResponse.BodyHandlers.ofString());
 					String responseBody = response.body();
 					assertThat(responseBody).isNotBlank();
 				}
@@ -185,11 +186,8 @@ public abstract class AbstractStatelessIntegrationTests {
 				// perform a blocking call to a remote service
 				try {
 					HttpResponse<String> response = HttpClient.newHttpClient()
-						.send(HttpRequest.newBuilder()
-							.uri(URI.create(
-									"https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md"))
-							.GET()
-							.build(), HttpResponse.BodyHandlers.ofString());
+						.send(HttpRequest.newBuilder().uri(remoteService.uri()).GET().build(),
+								HttpResponse.BodyHandlers.ofString());
 					String responseBody = response.body();
 					assertThat(responseBody).isNotBlank();
 				}
@@ -210,11 +208,8 @@ public abstract class AbstractStatelessIntegrationTests {
 			// perform a blocking call to a remote service
 			try {
 				HttpResponse<String> response = HttpClient.newHttpClient()
-					.send(HttpRequest.newBuilder()
-						.uri(URI.create(
-								"https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md"))
-						.GET()
-						.build(), HttpResponse.BodyHandlers.ofString());
+					.send(HttpRequest.newBuilder().uri(remoteService.uri()).GET().build(),
+							HttpResponse.BodyHandlers.ofString());
 				String responseBody = response.body();
 				assertThat(responseBody).isNotBlank();
 			}

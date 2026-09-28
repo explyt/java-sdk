@@ -32,11 +32,13 @@ import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.ProtocolVersions;
+import io.modelcontextprotocol.util.LocalHttpEndpoint;
 import net.javacrumbs.jsonunit.core.Option;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.startup.Tomcat;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -65,6 +67,9 @@ class HttpServletStatelessIntegrationTests {
 	private HttpServletStatelessServerTransport mcpStatelessServerTransport;
 
 	ConcurrentHashMap<String, McpClient.SyncSpec> clientBuilders = new ConcurrentHashMap<>();
+
+	@AutoClose
+	private final LocalHttpEndpoint remoteService = LocalHttpEndpoint.serving("remote service response");
 
 	private Tomcat tomcat;
 
@@ -123,11 +128,7 @@ class HttpServletStatelessIntegrationTests {
 				Tool.builder().name("tool1").title("tool1 description").inputSchema(EMPTY_JSON_SCHEMA).build(),
 				(transportContext, request) -> {
 					// perform a blocking call to a remote service
-					String response = RestClient.create()
-						.get()
-						.uri("https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md")
-						.retrieve()
-						.body(String.class);
+					String response = RestClient.create().get().uri(remoteService.uri()).retrieve().body(String.class);
 					assertThat(response).isNotBlank();
 					return callResponse;
 				});

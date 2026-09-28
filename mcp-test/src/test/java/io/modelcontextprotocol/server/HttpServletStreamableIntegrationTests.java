@@ -15,6 +15,7 @@ import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.server.McpServer.AsyncSpecification;
 import io.modelcontextprotocol.server.McpServer.SyncSpecification;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
+import io.modelcontextprotocol.server.transport.SseStreamOpenedFilter;
 import io.modelcontextprotocol.server.transport.TomcatTestUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.apache.catalina.LifecycleException;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.provider.Arguments;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 @Timeout(15)
 class HttpServletStreamableIntegrationTests extends AbstractMcpClientServerIntegrationTests {
@@ -35,6 +37,8 @@ class HttpServletStreamableIntegrationTests extends AbstractMcpClientServerInteg
 	private static final String MESSAGE_ENDPOINT = "/mcp/message";
 
 	private HttpServletStreamableServerTransportProvider mcpServerTransportProvider;
+
+	private SseStreamOpenedFilter sseStreamOpenedFilter;
 
 	private Tomcat tomcat;
 
@@ -51,7 +55,8 @@ class HttpServletStreamableIntegrationTests extends AbstractMcpClientServerInteg
 			.keepAliveInterval(Duration.ofSeconds(1))
 			.build();
 
-		tomcat = TomcatTestUtil.createTomcatServer("", PORT, mcpServerTransportProvider);
+		sseStreamOpenedFilter = new SseStreamOpenedFilter();
+		tomcat = TomcatTestUtil.createTomcatServer("", PORT, mcpServerTransportProvider, sseStreamOpenedFilter);
 		try {
 			tomcat.start();
 			assertThat(tomcat.getServer().getState()).isEqualTo(LifecycleState.STARTED);
@@ -65,6 +70,12 @@ class HttpServletStreamableIntegrationTests extends AbstractMcpClientServerInteg
 					McpClient.sync(HttpClientStreamableHttpTransport.builder("http://localhost:" + PORT)
 						.endpoint(MESSAGE_ENDPOINT)
 						.build()).requestTimeout(Duration.ofHours(10)));
+	}
+
+	@Override
+	protected void awaitClientStreamEstablished() {
+		await("MCP client SSE stream opened").atMost(Duration.ofSeconds(5))
+			.until(sseStreamOpenedFilter::isSseStreamOpened);
 	}
 
 	@Override
