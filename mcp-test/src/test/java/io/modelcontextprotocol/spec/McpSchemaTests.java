@@ -1161,7 +1161,7 @@ public class McpSchemaTests {
 	}
 
 	@Test
-	void testToolDeserializationAcceptsSchemaValuedAdditionalProperties() throws Exception {
+	void testListToolsResultAcceptsSchemaValuedAdditionalProperties() throws Exception {
 		String inputSchemaJson = """
 				{
 					"type": "object",
@@ -1173,13 +1173,14 @@ public class McpSchemaTests {
 				}
 				""";
 
-		McpSchema.Tool tool = JSON_MAPPER.readValue(toolJson(inputSchemaJson), McpSchema.Tool.class);
+		McpSchema.ListToolsResult result = unmarshalListToolsResult(inputSchemaJson);
 
-		assertThatJson(JSON_MAPPER.writeValueAsString(tool.inputSchema())).isEqualTo(json(inputSchemaJson));
+		assertThatJson(JSON_MAPPER.writeValueAsString(result)).node("tools[0].inputSchema")
+			.isEqualTo(json(inputSchemaJson));
 	}
 
 	@Test
-	void testToolDeserializationPreservesUnmodelledSchemaKeywords() throws Exception {
+	void testListToolsResultPreservesUnmodelledSchemaKeywords() throws Exception {
 		String inputSchemaJson = """
 				{
 					"$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1194,15 +1195,41 @@ public class McpSchemaTests {
 				}
 				""";
 
-		McpSchema.Tool tool = JSON_MAPPER.readValue(toolJson(inputSchemaJson), McpSchema.Tool.class);
+		McpSchema.ListToolsResult result = unmarshalListToolsResult(inputSchemaJson);
 
-		assertThatJson(JSON_MAPPER.writeValueAsString(tool.inputSchema())).isEqualTo(json(inputSchemaJson));
+		assertThatJson(JSON_MAPPER.writeValueAsString(result)).node("tools[0].inputSchema")
+			.isEqualTo(json(inputSchemaJson));
 	}
 
-	private static String toolJson(String inputSchemaJson) {
-		return """
-				{"name": "click", "inputSchema": %s}
+	private static McpSchema.ListToolsResult unmarshalListToolsResult(String inputSchemaJson) throws IOException {
+		String resultJson = """
+				{"tools": [{"name": "click", "inputSchema": %s}]}
 				""".formatted(inputSchemaJson);
+		Map<String, Object> jsonRpcResult = JSON_MAPPER.readValue(resultJson, new TypeRef<HashMap<String, Object>>() {
+		});
+		return JSON_MAPPER.convertValue(jsonRpcResult, new TypeRef<McpSchema.ListToolsResult>() {
+		});
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	void testToolBuilderConvertsDeprecatedJsonSchemaToMap() throws Exception {
+		McpSchema.JsonSchema legacySchema = new McpSchema.JsonSchema("object",
+				Map.of("address", Map.of("$ref", "#/$defs/Address")), List.of("address"), false,
+				Map.of("Address", Map.of("type", "string")), Map.of("Legacy", Map.of("type", "number")));
+
+		McpSchema.Tool tool = McpSchema.Tool.builder().name("addressTool").inputSchema(legacySchema).build();
+
+		assertThatJson(JSON_MAPPER.writeValueAsString(tool.inputSchema())).isEqualTo(json("""
+				{
+					"type": "object",
+					"properties": {"address": {"$ref": "#/$defs/Address"}},
+					"required": ["address"],
+					"additionalProperties": false,
+					"$defs": {"Address": {"type": "string"}},
+					"definitions": {"Legacy": {"type": "number"}}
+				}
+				"""));
 	}
 
 	@Test
