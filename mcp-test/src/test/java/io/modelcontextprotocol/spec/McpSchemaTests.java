@@ -1161,6 +1161,51 @@ public class McpSchemaTests {
 	}
 
 	@Test
+	void testToolDeserializationAcceptsSchemaValuedAdditionalProperties() throws Exception {
+		String inputSchemaJson = """
+				{
+					"type": "object",
+					"properties": {
+						"uid": {"type": "string"}
+					},
+					"required": ["uid"],
+					"additionalProperties": {}
+				}
+				""";
+
+		McpSchema.Tool tool = JSON_MAPPER.readValue(toolJson(inputSchemaJson), McpSchema.Tool.class);
+
+		assertThatJson(JSON_MAPPER.writeValueAsString(tool.inputSchema())).isEqualTo(json(inputSchemaJson));
+	}
+
+	@Test
+	void testToolDeserializationPreservesUnmodelledSchemaKeywords() throws Exception {
+		String inputSchemaJson = """
+				{
+					"$schema": "https://json-schema.org/draft/2020-12/schema",
+					"type": "object",
+					"properties": {
+						"target": {"$ref": "#/$defs/Target"}
+					},
+					"$defs": {
+						"Target": {"type": "string", "minLength": 1}
+					},
+					"minProperties": 1
+				}
+				""";
+
+		McpSchema.Tool tool = JSON_MAPPER.readValue(toolJson(inputSchemaJson), McpSchema.Tool.class);
+
+		assertThatJson(JSON_MAPPER.writeValueAsString(tool.inputSchema())).isEqualTo(json(inputSchemaJson));
+	}
+
+	private static String toolJson(String inputSchemaJson) {
+		return """
+				{"name": "click", "inputSchema": %s}
+				""".formatted(inputSchemaJson);
+	}
+
+	@Test
 	void testCallToolRequest() throws Exception {
 		Map<String, Object> arguments = new HashMap<>();
 		arguments.put("name", "test");
