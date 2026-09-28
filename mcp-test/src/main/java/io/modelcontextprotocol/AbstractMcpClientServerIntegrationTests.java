@@ -4,7 +4,6 @@
 
 package io.modelcontextprotocol;
 
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -47,8 +46,10 @@ import io.modelcontextprotocol.spec.McpSchema.Root;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import io.modelcontextprotocol.util.LocalHttpEndpoint;
 import io.modelcontextprotocol.util.Utils;
 import net.javacrumbs.jsonunit.core.Option;
+import org.junit.jupiter.api.AutoClose;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -67,6 +68,9 @@ import static org.mockito.Mockito.mock;
 public abstract class AbstractMcpClientServerIntegrationTests {
 
 	protected ConcurrentHashMap<String, McpClient.SyncSpec> clientBuilders = new ConcurrentHashMap<>();
+
+	@AutoClose
+	protected final LocalHttpEndpoint remoteService = LocalHttpEndpoint.serving("remote service response");
 
 	abstract protected void prepareClients(int port, String mcpEndpoint);
 
@@ -779,11 +783,8 @@ public abstract class AbstractMcpClientServerIntegrationTests {
 
 				try {
 					HttpResponse<String> response = HttpClient.newHttpClient()
-						.send(HttpRequest.newBuilder()
-							.uri(URI.create(
-									"https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md"))
-							.GET()
-							.build(), HttpResponse.BodyHandlers.ofString());
+						.send(HttpRequest.newBuilder().uri(remoteService.uri()).GET().build(),
+								HttpResponse.BodyHandlers.ofString());
 					String responseBody = response.body();
 					responseBodyIsNullOrBlank.set(!Utils.hasText(responseBody));
 				}
@@ -928,11 +929,8 @@ public abstract class AbstractMcpClientServerIntegrationTests {
 				// perform a blocking call to a remote service
 				try {
 					HttpResponse<String> response = HttpClient.newHttpClient()
-						.send(HttpRequest.newBuilder()
-							.uri(URI.create(
-									"https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md"))
-							.GET()
-							.build(), HttpResponse.BodyHandlers.ofString());
+						.send(HttpRequest.newBuilder().uri(remoteService.uri()).GET().build(),
+								HttpResponse.BodyHandlers.ofString());
 					String responseBody = response.body();
 					assertThat(responseBody).isNotBlank();
 				}
@@ -953,11 +951,8 @@ public abstract class AbstractMcpClientServerIntegrationTests {
 			// perform a blocking call to a remote service
 			try {
 				HttpResponse<String> response = HttpClient.newHttpClient()
-					.send(HttpRequest.newBuilder()
-						.uri(URI.create(
-								"https://raw.githubusercontent.com/modelcontextprotocol/java-sdk/refs/heads/main/README.md"))
-						.GET()
-						.build(), HttpResponse.BodyHandlers.ofString());
+					.send(HttpRequest.newBuilder().uri(remoteService.uri()).GET().build(),
+							HttpResponse.BodyHandlers.ofString());
 				String responseBody = response.body();
 				assertThat(responseBody).isNotBlank();
 				toolsRef.set(toolsUpdate);
