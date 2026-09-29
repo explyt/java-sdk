@@ -21,6 +21,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextResourceContents;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.Test;
 
+import io.modelcontextprotocol.json.TypeRef;
 import net.javacrumbs.jsonunit.core.Option;
 
 /**
@@ -713,13 +714,15 @@ public class McpSchemaTests {
 				""";
 
 		// Deserialize the original string to a JsonSchema object
-		McpSchema.JsonSchema schema = JSON_MAPPER.readValue(schemaJson, McpSchema.JsonSchema.class);
+		Map<String, Object> schema = JSON_MAPPER.readValue(schemaJson, new TypeRef<HashMap<String, Object>>() {
+		});
 
 		// Serialize the object back to a string
 		String serialized = JSON_MAPPER.writeValueAsString(schema);
 
 		// Deserialize again
-		McpSchema.JsonSchema deserialized = JSON_MAPPER.readValue(serialized, McpSchema.JsonSchema.class);
+		Map<String, Object> deserialized = JSON_MAPPER.readValue(serialized, new TypeRef<HashMap<String, Object>>() {
+		});
 
 		// Serialize one more time and compare with the first serialization
 		String serializedAgain = JSON_MAPPER.writeValueAsString(deserialized);
@@ -756,13 +759,15 @@ public class McpSchemaTests {
 				""";
 
 		// Deserialize the original string to a JsonSchema object
-		McpSchema.JsonSchema schema = JSON_MAPPER.readValue(schemaJson, McpSchema.JsonSchema.class);
+		Map<String, Object> schema = JSON_MAPPER.readValue(schemaJson, new TypeRef<HashMap<String, Object>>() {
+		});
 
 		// Serialize the object back to a string
 		String serialized = JSON_MAPPER.writeValueAsString(schema);
 
 		// Deserialize again
-		McpSchema.JsonSchema deserialized = JSON_MAPPER.readValue(serialized, McpSchema.JsonSchema.class);
+		Map<String, Object> deserialized = JSON_MAPPER.readValue(serialized, new TypeRef<HashMap<String, Object>>() {
+		});
 
 		// Serialize one more time and compare with the first serialization
 		String serializedAgain = JSON_MAPPER.writeValueAsString(deserialized);
@@ -845,8 +850,11 @@ public class McpSchemaTests {
 		assertThatJson(serializedAgain).when(Option.IGNORING_ARRAY_ORDER).isEqualTo(json(serialized));
 
 		// Just verify the basic structure was preserved
-		assertThat(deserializedTool.inputSchema().defs()).isNotNull();
-		assertThat(deserializedTool.inputSchema().defs()).containsKey("Address");
+		assertThat(deserializedTool.inputSchema()).containsKey("$defs")
+			.extractingByKey("$defs")
+			.isNotNull()
+			.asInstanceOf(InstanceOfAssertFactories.MAP)
+			.containsKey("Address");
 	}
 
 	@Test
@@ -866,14 +874,14 @@ public class McpSchemaTests {
 				}
 				""";
 
-		McpSchema.JsonSchema schema = JSON_MAPPER.readValue(schemaJson, McpSchema.JsonSchema.class);
+		Map<String, Object> inputSchema = Map.of("inputSchema", schemaJson);
 		Map<String, Object> meta = Map.of("metaKey", "metaValue");
 
 		McpSchema.Tool tool = McpSchema.Tool.builder()
 			.name("addressTool")
 			.title("addressTool")
 			.description("Handles addresses")
-			.inputSchema(schema)
+			.inputSchema(inputSchema)
 			.meta(meta)
 			.build();
 
@@ -1114,7 +1122,7 @@ public class McpSchemaTests {
 		assertThat(tool.name()).isEqualTo("test-tool");
 		assertThat(tool.description()).isEqualTo("A test tool");
 		assertThat(tool.inputSchema()).isNotNull();
-		assertThat(tool.inputSchema().type()).isEqualTo("object");
+		assertThat(tool.inputSchema().get("type")).isEqualTo("object");
 		assertThat(tool.outputSchema()).isNotNull();
 		assertThat(tool.outputSchema()).containsKey("type");
 		assertThat(tool.outputSchema().get("type")).isEqualTo("object");
@@ -1150,6 +1158,78 @@ public class McpSchemaTests {
 		assertThat(tool.inputSchema()).isNotNull();
 		assertThat(tool.outputSchema()).isNull();
 		assertThat(tool.annotations()).isNull();
+	}
+
+	@Test
+	void testListToolsResultAcceptsSchemaValuedAdditionalProperties() throws Exception {
+		String inputSchemaJson = """
+				{
+					"type": "object",
+					"properties": {
+						"uid": {"type": "string"}
+					},
+					"required": ["uid"],
+					"additionalProperties": {}
+				}
+				""";
+
+		McpSchema.ListToolsResult result = unmarshalListToolsResult(inputSchemaJson);
+
+		assertThatJson(JSON_MAPPER.writeValueAsString(result)).node("tools[0].inputSchema")
+			.isEqualTo(json(inputSchemaJson));
+	}
+
+	@Test
+	void testListToolsResultPreservesUnmodelledSchemaKeywords() throws Exception {
+		String inputSchemaJson = """
+				{
+					"$schema": "https://json-schema.org/draft/2020-12/schema",
+					"type": "object",
+					"properties": {
+						"target": {"$ref": "#/$defs/Target"}
+					},
+					"$defs": {
+						"Target": {"type": "string", "minLength": 1}
+					},
+					"minProperties": 1
+				}
+				""";
+
+		McpSchema.ListToolsResult result = unmarshalListToolsResult(inputSchemaJson);
+
+		assertThatJson(JSON_MAPPER.writeValueAsString(result)).node("tools[0].inputSchema")
+			.isEqualTo(json(inputSchemaJson));
+	}
+
+	private static McpSchema.ListToolsResult unmarshalListToolsResult(String inputSchemaJson) throws IOException {
+		String resultJson = """
+				{"tools": [{"name": "click", "inputSchema": %s}]}
+				""".formatted(inputSchemaJson);
+		Map<String, Object> jsonRpcResult = JSON_MAPPER.readValue(resultJson, new TypeRef<HashMap<String, Object>>() {
+		});
+		return JSON_MAPPER.convertValue(jsonRpcResult, new TypeRef<McpSchema.ListToolsResult>() {
+		});
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	void testToolBuilderConvertsDeprecatedJsonSchemaToMap() throws Exception {
+		McpSchema.JsonSchema legacySchema = new McpSchema.JsonSchema("object",
+				Map.of("address", Map.of("$ref", "#/$defs/Address")), List.of("address"), false,
+				Map.of("Address", Map.of("type", "string")), Map.of("Legacy", Map.of("type", "number")));
+
+		McpSchema.Tool tool = McpSchema.Tool.builder().name("addressTool").inputSchema(legacySchema).build();
+
+		assertThatJson(JSON_MAPPER.writeValueAsString(tool.inputSchema())).isEqualTo(json("""
+				{
+					"type": "object",
+					"properties": {"address": {"$ref": "#/$defs/Address"}},
+					"required": ["address"],
+					"additionalProperties": false,
+					"$defs": {"Address": {"type": "string"}},
+					"definitions": {"Legacy": {"type": "number"}}
+				}
+				"""));
 	}
 
 	@Test
